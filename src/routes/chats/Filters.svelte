@@ -3,33 +3,49 @@
     import WhatsApp from "../../lib/images/filters/whatsApp.png";
     import Telegram from "../../lib/images/filters/telega.png";
     import Instagram from "../../lib/images/filters/instagram.png";
+    import Messenger from "../../lib/images/filters/messenger.png";
     import Online from "../../lib/images/filters/onine.png";
     import Offline from "../../lib/images/filters/offline.png";
+    import Web from "../../lib/images/filters/web.png";
+    import Meta from "../../lib/images/filters/meta.png";
     import HumRequired from "../../lib/images/filters/flag.png";
     import UserSelect from "./UserSelect.svelte";
     import type { User } from "../../lib/types/type";
 
-    type Platform = "WhatsApp" | "Telegram" | "Instagram" | null;
+    type Platform =
+        | "WhatsApp"
+        | "Telegram"
+        | "Instagram"
+        | "Messenger"
+        | "Web"
+        | null;
     type Status = "Online" | "Offline" | "Human Required" | null;
 
     export let onUserSelect: (user: User) => void = () => {};
     export let clientId: number | undefined = undefined;
+
+    let isMetaDropdownOpen: boolean = false;
+    let metaDropdownRef: HTMLDivElement;
 
     let activePlatform: Platform = null;
     let activeStatus: Status = null;
     let selectedUserId: string | null = null;
     let userSelectRef: UserSelect;
 
-
     let unreadMessages: Record<string, number> = {};
     let lastMessageTimes: Record<string, Date> = {};
 
     let websocket: WebSocket | null = null;
 
-    const platforms = [
+    const metaPlatforms = [
         { name: "WhatsApp", icon: WhatsApp },
-        { name: "Telegram", icon: Telegram },
         { name: "Instagram", icon: Instagram },
+        { name: "Messenger", icon: Messenger },
+    ];
+
+    const otherPlatforms = [
+        { name: "Telegram", icon: Telegram },
+        { name: "Web", icon: Web },
     ];
 
     const statuses = [
@@ -38,9 +54,27 @@
         { name: "Human Required", icon: HumRequired },
     ];
 
+    function toggleMetaDropdown() {
+        isMetaDropdownOpen = !isMetaDropdownOpen;
+    }
+
+    function closeMetaDropdown() {
+        isMetaDropdownOpen = false;
+    }
+
     onMount(() => {
         // Ініціалізуємо WebSocket з'єднання для отримання нових повідомлень
         initializeWebSocket();
+        function handleClickOutside(event: MouseEvent) {
+            if (
+                metaDropdownRef &&
+                !metaDropdownRef.contains(event.target as Node)
+            ) {
+                closeMetaDropdown();
+            }
+        }
+
+        document.addEventListener("click", handleClickOutside);
 
         loadUnreadMessagesFromStorage();
 
@@ -48,12 +82,12 @@
             if (websocket) {
                 websocket.close();
             }
+            document.removeEventListener("click", handleClickOutside);
         };
     });
 
     function initializeWebSocket() {
         try {
-          
             websocket = new WebSocket("ws://your-websocket-url");
 
             websocket.onopen = () => {
@@ -71,7 +105,7 @@
 
             websocket.onclose = () => {
                 console.log("WebSocket disconnected");
-               
+
                 setTimeout(() => {
                     initializeWebSocket();
                 }, 5000);
@@ -107,7 +141,6 @@
             ? new Date(messageTime)
             : new Date();
 
-      
         if (userSelectRef) {
             userSelectRef.updateUnreadMessages(
                 userId,
@@ -116,7 +149,6 @@
             );
         }
 
-      
         saveUnreadMessagesToStorage();
 
         console.log(
@@ -237,11 +269,9 @@
     function handleUserSelect(user: User): void {
         console.log("Вибрано користувача:", user);
 
-       
         if (unreadMessages[user.id] > 0) {
             handleMessagesRead(user.id);
 
-           
             if (websocket && websocket.readyState === WebSocket.OPEN) {
                 websocket.send(
                     JSON.stringify({
@@ -256,20 +286,17 @@
         onUserSelect(user);
     }
 
-   
     $: if (clientId !== undefined && userSelectRef) {
         userSelectRef.refreshUsers();
     }
 
     $: activeFiltersCount = (activePlatform ? 1 : 0) + (activeStatus ? 1 : 0);
 
-    
     $: totalUnreadCount = Object.values(unreadMessages).reduce(
         (sum, count) => sum + count,
         0,
     );
 
-  
     export function addNewMessage(userId: string, messageTime?: Date) {
         handleNewMessage(userId, messageTime?.toISOString());
     }
@@ -286,7 +313,6 @@
         saveUnreadMessagesToStorage();
     }
 
-
     function simulateNewMessage() {
         const testUserId = "test-user-1";
         handleNewMessage(testUserId);
@@ -296,11 +322,9 @@
     let isSearchExpanded: boolean = false;
     let searchInputRef: HTMLInputElement;
 
-
     function toggleSearch() {
         isSearchExpanded = !isSearchExpanded;
         if (isSearchExpanded) {
-           
             setTimeout(() => {
                 searchInputRef?.focus();
             }, 300);
@@ -341,7 +365,65 @@
                 <div class="block-title">
                     <span>Platforms</span>
                 </div>
-                {#each platforms as { name, icon }}
+
+                <!-- Meta Platforms Dropdown -->
+                <div
+                    class="meta-dropdown-container"
+                    bind:this={metaDropdownRef}
+                >
+                    <button
+                        class="block-content dropdown-trigger"
+                        class:active={metaPlatforms.some(
+                            (p) => activePlatform === p.name,
+                        )}
+                        on:click={toggleMetaDropdown}
+                        type="button"
+                        aria-expanded={isMetaDropdownOpen}
+                    >
+                        <div class="block-img">
+                            <img src={Meta} alt="Meta" />
+                        </div>
+                        <p class="block-text">Meta</p>
+                        <svg
+                            class="dropdown-arrow"
+                            class:rotated={isMetaDropdownOpen}
+                            width="12"
+                            height="12"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                        >
+                            <path
+                                d="m6 9 6 6 6-6"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            />
+                        </svg>
+                    </button>
+
+                    {#if isMetaDropdownOpen}
+                        <div class="dropdown-menu">
+                            {#each metaPlatforms as { name, icon }}
+                                <button
+                                    class="dropdown-item"
+                                    class:active={activePlatform === name}
+                                    on:click={() => {
+                                        selectFilter("platform", name);
+                                        closeMetaDropdown();
+                                    }}
+                                    type="button"
+                                >
+                                    <div class="block-img">
+                                        <img src={icon} alt={name} />
+                                    </div>
+                                    <p class="block-text">{name}</p>
+                                </button>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+
+                <!-- Other Platforms -->
+                {#each otherPlatforms as { name, icon }}
                     <button
                         class="block-content"
                         class:active={activePlatform === name}
@@ -404,6 +486,9 @@
                         class="search-button"
                         class:active={isSearchExpanded}
                         on:click={toggleSearch}
+                        aria-label={isSearchExpanded
+                            ? "Close search"
+                            : "Search users"}
                         title={isSearchExpanded
                             ? "Close search"
                             : "Search users"}
@@ -460,6 +545,111 @@
         margin: 0 auto;
         font-family: "Inter", sans-serif;
         background-color: var(--color-070709);
+    }
+
+    .meta-dropdown-container {
+        position: relative;
+    }
+
+    .dropdown-trigger {
+        position: relative;
+        justify-content: space-between;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 6px;
+        padding-left: 0;
+        text-align: left;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+        width: 100%;
+    }
+
+    .dropdown-trigger:hover {
+        background-color: var(--color-232426);
+    }
+
+    .dropdown-trigger.active .block-text {
+        color: var(--color-fff);
+        font-weight: 500;
+    }
+
+    .dropdown-arrow {
+        transition: transform 0.2s ease;
+        margin-left: auto;
+        color: var(--color-9b9ca3);
+        flex-shrink: 0;
+    }
+
+    .dropdown-arrow.rotated {
+        transform: rotate(180deg);
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--color-121213);
+        border: 1px solid var(--color-232426);
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 10;
+        margin-top: 4px;
+        overflow: hidden;
+    }
+
+    .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 8px 12px;
+        border: none;
+        background: none;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        text-align: left;
+    }
+
+    .dropdown-item:hover {
+        background-color: var(--color-232426);
+    }
+
+    .dropdown-item.active {
+        background-color: var(--color-232426);
+    }
+
+    .dropdown-item.active .block-text {
+        color: var(--color-fff);
+        font-weight: 500;
+    }
+
+    .dropdown-item .block-img {
+        background-color: var(--color-070709);
+        border-radius: 6px;
+        width: 26px;
+        height: 26px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        transition: background-color 0.2s ease;
+    }
+
+    .dropdown-item .block-img img {
+        width: 16px;
+        height: 16px;
+    }
+
+    .dropdown-item .block-text {
+        color: var(--color-9b9ca3);
+        font-size: 12px;
+        font-weight: 400;
+        transition: color 0.2s ease;
+        margin: 0;
     }
 
     .filters-container {
@@ -647,7 +837,7 @@
         margin: 0;
         letter-spacing: 0.5px;
     }
- 
+
     .search-container {
         display: flex;
         align-items: center;
@@ -778,6 +968,5 @@
             flex-wrap: wrap;
             gap: 4px;
         }
-
     }
 </style>

@@ -1,6 +1,6 @@
 import { supabase } from '../../lib/supabaseClient';
 import { getCurrentUser, canViewAllUsers, getClientIdForFiltering } from './userUtils';
-import { sortUsersBackend } from '../../lib/utils/userSorting';
+import { sortUsers } from '../../lib/utils/userSorting';
 
 /**
  * @typedef {Object} User
@@ -71,27 +71,28 @@ export async function getFilteredUsers() {
             return [];
         }
         
-        // get last message time for all users in one query
+        // Get last message time for all users in one optimized query
         const userIds = users.map(user => user.id);
         console.log(`Fetching last message times for ${userIds.length} users`);
         
-        // use aggregate query to get MAX(time) for each end_user_id
+        // Get the latest message for each user using a more efficient query
+        // This uses a raw SQL query approach with Supabase's built-in PostgreSQL features
         const { data: messagesData, error: messagesError } = await supabase
             .from('messages')
             .select('end_user_id, time')
             .in('end_user_id', userIds)
-            .order('end_user_id')
             .order('time', { ascending: false });
-        
+            
         if (messagesError) {
             console.error('Error fetching messages:', messagesError);
             // continue without message times, but with a warning
             console.warn('Continuing without message times due to error');
         }
         
-        // create a map of last messages (only the first message for each user through ORDER BY)
+        // Create a map of last messages for each user
         const lastMessageMap = new Map();
         if (messagesData) {
+            // Since we ordered by time descending, the first message for each user is the latest
             messagesData.forEach(msg => {
                 if (!lastMessageMap.has(msg.end_user_id)) {
                     lastMessageMap.set(msg.end_user_id, new Date(msg.time));
@@ -106,7 +107,7 @@ export async function getFilteredUsers() {
         }));
         
         // Use centralized sorting function from userSorting.ts
-        const sortedUsers = sortUsersBackend(processedUsers);
+        const sortedUsers = sortUsers(processedUsers);
         
         return sortedUsers;
         

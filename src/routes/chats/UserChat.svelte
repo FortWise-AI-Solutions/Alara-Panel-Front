@@ -982,6 +982,14 @@
               >
                 @{selectedUser.username}
               </a>)
+            {:else if ["Messenger", "messenger", "MESSENGER"].includes(selectedUser.platform)}
+              &nbsp;(<a
+                href={"https://m.me/" + selectedUser.username}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {selectedUser.username}
+              </a>)
             {/if}
           {/if}
         </h2>

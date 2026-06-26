@@ -43,15 +43,13 @@ export async function getFilteredUsers() {
     console.log('Current user:', currentUser);
     
     try {
-        let usersQuery = supabase.from('end_users').select('*');
-        
-        // If the user is not alara_admin, filter by client_id
+        // Resolve the client_id filter (if any) before paginating.
+        let filterClientId = null;
         if (!canViewAllUsers(currentUser)) {
-            const clientId = getClientIdForFiltering(currentUser);
-            
-            if (clientId) {
-                usersQuery = usersQuery.eq('client_id', clientId);
-                console.log(`Filtering users by client_id: ${clientId}`);
+            filterClientId = getClientIdForFiltering(currentUser);
+
+            if (filterClientId) {
+                console.log(`Filtering users by client_id: ${filterClientId}`);
             } else {
                 console.warn('No client_id found for filtering, returning empty array');
                 return [];
@@ -59,14 +57,24 @@ export async function getFilteredUsers() {
         } else {
             console.log('Super admin access - showing all users');
         }
-        
-        const { data: users, error: usersError } = await usersQuery;
-        
-        if (usersError) {
-            console.error('Error fetching users:', usersError);
-            throw usersError;
-        }
-        
+
+        // Paginate so we load EVERY user. Without this, Supabase caps the
+        // result at 1000 rows and newer users (e.g. a fresh booking's
+        // end_user) silently never appear in the panel. Order by id so the
+        // .range() paging is stable across pages.
+        const users = await fetchAllRows((from, to) => {
+            let usersQuery = supabase
+                .from('end_users')
+                .select('*')
+                .order('id', { ascending: true });
+
+            if (filterClientId) {
+                usersQuery = usersQuery.eq('client_id', filterClientId);
+            }
+
+            return usersQuery.range(from, to);
+        });
+
         if (!users || users.length === 0) {
             console.log('No users found');
             return [];
@@ -76,20 +84,26 @@ export async function getFilteredUsers() {
         const userIds = users.map(user => user.id);
         console.log(`Fetching last message times for ${userIds.length} users`);
         
-        // Fetch all messages for these users, paginated so we are not limited
-        // to the first 1000 rows that Supabase returns per request. Without
-        // pagination users beyond the cap would never get a lastMessageTime.
+        // Fetch all messages for these users. Two limits to respect:
+        //  1. A single request returns at most 1000 rows -> paginate with range().
+        //  2. A huge .in(...) list bloats the request URL past the gateway limit
+        //     -> chunk the user ids so each request stays small.
         let messagesData = [];
         try {
-            messagesData = await fetchAllRows((from, to) =>
-                supabase
-                    .from('messages')
-                    .select('end_user_id, time')
-                    .in('end_user_id', userIds)
-                    .order('end_user_id')
-                    .order('time', { ascending: false })
-                    .range(from, to)
-            );
+            const ID_CHUNK_SIZE = 200;
+            for (let i = 0; i < userIds.length; i += ID_CHUNK_SIZE) {
+                const idChunk = userIds.slice(i, i + ID_CHUNK_SIZE);
+                const chunkMessages = await fetchAllRows((from, to) =>
+                    supabase
+                        .from('messages')
+                        .select('end_user_id, time')
+                        .in('end_user_id', idChunk)
+                        .order('end_user_id')
+                        .order('time', { ascending: false })
+                        .range(from, to)
+                );
+                messagesData.push(...chunkMessages);
+            }
         } catch (messagesError) {
             console.error('Error fetching messages:', messagesError);
             // continue without message times, but with a warning

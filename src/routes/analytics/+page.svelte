@@ -1,6 +1,7 @@
 <script>
     import { onMount, onDestroy } from "svelte";
     import { supabase } from "$lib/supabaseClient";
+    import { fetchAllRows } from "$lib/utils/fetchAll";
     import {
         getCurrentUser,
         getClientIdForFiltering,
@@ -121,23 +122,25 @@
      * @returns {Promise<number>}
      */
     async function getAverageResponseTime() {
-        let query = supabase
-            .from("messages")
-            .select("time, response_time")
-            .not("response_time", "is", null)
-            .not("time", "is", null)
-            .gte(
-                "time",
-                new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            );
+        const data = await fetchAllRows((from, to) => {
+            let query = supabase
+                .from("messages")
+                .select("time, response_time")
+                .not("response_time", "is", null)
+                .not("time", "is", null)
+                .gte(
+                    "time",
+                    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                );
 
-        // Apply client filter if not super admin
-        if (clientId !== null) {
-            query = query.eq("client_id", clientId);
-        }
+            // Apply client filter if not super admin
+            if (clientId !== null) {
+                query = query.eq("client_id", clientId);
+            }
 
-        const { data, error } = await query;
-        if (error) throw error;
+            return query.range(from, to);
+        });
+
         if (!data || data.length === 0) return 0;
 
         const totalMinutes = data.reduce((sum, msg) => {
@@ -156,21 +159,22 @@
      */
     async function getCompletionRate() {
         // Get total unique chats
-        let totalQuery = supabase
-            .from("messages")
-            .select("chat_id")
-            .not("chat_id", "is", null)
-            .gte(
-                "time",
-                new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            );
+        const totalChats = await fetchAllRows((from, to) => {
+            let totalQuery = supabase
+                .from("messages")
+                .select("chat_id")
+                .not("chat_id", "is", null)
+                .gte(
+                    "time",
+                    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                );
 
-        if (clientId !== null) {
-            totalQuery = totalQuery.eq("client_id", clientId);
-        }
+            if (clientId !== null) {
+                totalQuery = totalQuery.eq("client_id", clientId);
+            }
 
-        const { data: totalChats, error: totalError } = await totalQuery;
-        if (totalError) throw totalError;
+            return totalQuery.range(from, to);
+        });
 
         const uniqueChats = [
             ...new Set(totalChats?.map((m) => m.chat_id) || []),
@@ -179,23 +183,23 @@
         if (uniqueChats.length === 0) return 0;
 
         // Get completed chats (chats with responses)
-        let completedQuery = supabase
-            .from("messages")
-            .select("chat_id")
-            .not("response", "is", null)
-            .not("chat_id", "is", null)
-            .gte(
-                "time",
-                new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            );
+        const completedChats = await fetchAllRows((from, to) => {
+            let completedQuery = supabase
+                .from("messages")
+                .select("chat_id")
+                .not("response", "is", null)
+                .not("chat_id", "is", null)
+                .gte(
+                    "time",
+                    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                );
 
-        if (clientId !== null) {
-            completedQuery = completedQuery.eq("client_id", clientId);
-        }
+            if (clientId !== null) {
+                completedQuery = completedQuery.eq("client_id", clientId);
+            }
 
-        const { data: completedChats, error: completedError } =
-            await completedQuery;
-        if (completedError) throw completedError;
+            return completedQuery.range(from, to);
+        });
 
         const uniqueCompletedChats = [
             ...new Set(completedChats?.map((m) => m.chat_id) || []),
@@ -210,21 +214,22 @@
      * @returns {Promise<number>}
      */
     async function getTotalChats() {
-        let query = supabase
-            .from("messages")
-            .select("chat_id")
-            .not("chat_id", "is", null)
-            .gte(
-                "time",
-                new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            );
+        const data = await fetchAllRows((from, to) => {
+            let query = supabase
+                .from("messages")
+                .select("chat_id")
+                .not("chat_id", "is", null)
+                .gte(
+                    "time",
+                    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                );
 
-        if (clientId !== null) {
-            query = query.eq("client_id", clientId);
-        }
+            if (clientId !== null) {
+                query = query.eq("client_id", clientId);
+            }
 
-        const { data, error } = await query;
-        if (error) throw error;
+            return query.range(from, to);
+        });
 
         return [...new Set(data?.map((m) => m.chat_id) || [])].length;
     }
@@ -233,21 +238,22 @@
      * @returns {Promise<number>}
      */
     async function getUniqueUsers() {
-        let query = supabase
-            .from("messages")
-            .select("end_user_id")
-            .not("end_user_id", "is", null)
-            .gte(
-                "time",
-                new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-            );
+        const data = await fetchAllRows((from, to) => {
+            let query = supabase
+                .from("messages")
+                .select("end_user_id")
+                .not("end_user_id", "is", null)
+                .gte(
+                    "time",
+                    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+                );
 
-        if (clientId !== null) {
-            query = query.eq("client_id", clientId);
-        }
+            if (clientId !== null) {
+                query = query.eq("client_id", clientId);
+            }
 
-        const { data, error } = await query;
-        if (error) throw error;
+            return query.range(from, to);
+        });
 
         return [...new Set(data?.map((m) => m.end_user_id) || [])].length;
     }

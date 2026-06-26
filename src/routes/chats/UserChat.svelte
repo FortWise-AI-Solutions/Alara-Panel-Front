@@ -5,6 +5,7 @@
   import admin from "../../lib/images/admin.jpg";
   import { themeStore } from "../../lib/store/theme";
   import { supabase } from "../../lib/supabaseClient";
+  import { fetchAllRows } from "../../lib/utils/fetchAll";
   import { onMount, onDestroy } from "svelte";
   import { PUBLIC_WEB_SERVER } from "$env/static/public";
   import {
@@ -463,15 +464,16 @@
     error = null;
 
     try {
-      const { data, error: fetchError } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("end_user_id", parseInt(selectedUser.id))
-        .order("time", { ascending: true });
-
-      if (fetchError) {
-        throw fetchError;
-      }
+      // Paginate so chats with more than 1000 messages load in full
+      // (Supabase caps a single request at 1000 rows by default).
+      const data = await fetchAllRows((from, to) =>
+        supabase
+          .from("messages")
+          .select("*")
+          .eq("end_user_id", parseInt(selectedUser.id))
+          .order("time", { ascending: true })
+          .range(from, to),
+      );
 
       const newMessages = convertDatabaseMessagesToDisplayMessages(
         data || [],

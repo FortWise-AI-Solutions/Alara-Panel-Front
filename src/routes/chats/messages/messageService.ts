@@ -1,4 +1,5 @@
 import { supabase } from '../../../lib/supabaseClient';
+import { fetchAllRows } from '../../../lib/utils/fetchAll';
 
 export interface UnreadMessageInfo {
     userId: string;
@@ -149,14 +150,17 @@ class MessageService {
     // Отримання кількості непрочитаних повідомлень для користувача
     async getUnreadCount(userId: string): Promise<number> {
         try {
-            const { data: messages, error } = await supabase
-                .from('messages')
-                .select('id, content, response, time')
-                .eq('end_user_id', parseInt(userId))
-                .not('content', 'is', null)
-                .order('time', { ascending: true });
-
-            if (error) throw error;
+            // Paginate to count unread messages across the user's full history
+            // (a single Supabase request is capped at 1000 rows by default).
+            const messages = await fetchAllRows((from, to) =>
+                supabase
+                    .from('messages')
+                    .select('id, content, response, time')
+                    .eq('end_user_id', parseInt(userId))
+                    .not('content', 'is', null)
+                    .order('time', { ascending: true })
+                    .range(from, to)
+            );
 
             if (!messages || messages.length === 0) {
                 this.unreadCounts.set(userId, 0);
@@ -204,14 +208,17 @@ class MessageService {
                 return result;
             }
 
-            const { data: messages, error } = await supabase
-                .from('messages')
-                .select('id, end_user_id, content, response, time')
-                .in('end_user_id', userIds.map(id => parseInt(id)))
-                .not('content', 'is', null)
-                .order('time', { ascending: true });
-
-            if (error) throw error;
+            // Paginate so unread counts cover every user's full history
+            // (a single Supabase request is capped at 1000 rows by default).
+            const messages = await fetchAllRows((from, to) =>
+                supabase
+                    .from('messages')
+                    .select('id, end_user_id, content, response, time')
+                    .in('end_user_id', userIds.map(id => parseInt(id)))
+                    .not('content', 'is', null)
+                    .order('time', { ascending: true })
+                    .range(from, to)
+            );
 
             const messagesByUser: Record<string, any[]> = {};
             

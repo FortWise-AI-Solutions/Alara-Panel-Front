@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabaseClient';
 import { getCurrentUser, canViewAllUsers, getClientIdForFiltering } from './userUtils';
 import { sortUsersBackend } from '../../lib/utils/userSorting';
+import { fetchAllRows } from '../../lib/utils/fetchAll';
 
 /**
  * @typedef {Object} User
@@ -75,20 +76,26 @@ export async function getFilteredUsers() {
         const userIds = users.map(user => user.id);
         console.log(`Fetching last message times for ${userIds.length} users`);
         
-        // use aggregate query to get MAX(time) for each end_user_id
-        const { data: messagesData, error: messagesError } = await supabase
-            .from('messages')
-            .select('end_user_id, time')
-            .in('end_user_id', userIds)
-            .order('end_user_id')
-            .order('time', { ascending: false });
-        
-        if (messagesError) {
+        // Fetch all messages for these users, paginated so we are not limited
+        // to the first 1000 rows that Supabase returns per request. Without
+        // pagination users beyond the cap would never get a lastMessageTime.
+        let messagesData = [];
+        try {
+            messagesData = await fetchAllRows((from, to) =>
+                supabase
+                    .from('messages')
+                    .select('end_user_id, time')
+                    .in('end_user_id', userIds)
+                    .order('end_user_id')
+                    .order('time', { ascending: false })
+                    .range(from, to)
+            );
+        } catch (messagesError) {
             console.error('Error fetching messages:', messagesError);
             // continue without message times, but with a warning
             console.warn('Continuing without message times due to error');
         }
-        
+
         // create a map of last messages (only the first message for each user through ORDER BY)
         const lastMessageMap = new Map();
         if (messagesData) {

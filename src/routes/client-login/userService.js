@@ -58,21 +58,32 @@ export async function getFilteredUsers() {
             console.log('Super admin access - showing all users');
         }
 
-        // Paginate so we load EVERY user. Without this, Supabase caps the
-        // result at 1000 rows and newer users (e.g. a fresh booking's
-        // end_user) silently never appear in the panel. Order by id so the
-        // .range() paging is stable across pages.
+        // Load the FRESHEST leads first. end_users.id is an auto-incrementing
+        // integer, so the highest id is the newest lead. Ordering by id
+        // DESCENDING guarantees brand-new bookings show up immediately instead
+        // of landing on the last page (where they were silently dropped when
+        // the query degraded). We still paginate past Supabase's 1000-row cap,
+        // but bound the total to MAX_USERS so the panel stays fast and reliable
+        // as the table grows. Older conversations beyond this window are lower
+        // priority and intentionally not loaded.
+        const MAX_USERS = 5000;
         const users = await fetchAllRows((from, to) => {
             let usersQuery = supabase
                 .from('end_users')
                 .select('*')
-                .order('id', { ascending: true });
+                .order('id', { ascending: false });
 
             if (filterClientId) {
                 usersQuery = usersQuery.eq('client_id', filterClientId);
             }
 
-            return usersQuery.range(from, to);
+            // Never request past the MAX_USERS ceiling. Short-circuit once we
+            // reach it so the paginator terminates cleanly instead of issuing
+            // an out-of-range request.
+            if (from >= MAX_USERS) {
+                return Promise.resolve({ data: [], error: null });
+            }
+            return usersQuery.range(from, Math.min(to, MAX_USERS - 1));
         });
 
         if (!users || users.length === 0) {
@@ -84,10 +95,19 @@ export async function getFilteredUsers() {
         const userIds = users.map(user => user.id);
         console.log(`Fetching last message times for ${userIds.length} users`);
         
-        // Fetch all messages for these users. Two limits to respect:
+        // Fetch recent messages to order users by last-message time. Limits:
         //  1. A single request returns at most 1000 rows -> paginate with range().
         //  2. A huge .in(...) list bloats the request URL past the gateway limit
         //     -> chunk the user ids so each request stays small.
+        //  3. The messages table grows without bound; scanning ALL of it on
+        //     every 2s refresh is what made fresh leads fail to load. Restrict
+        //     to a recent window so this query stays cheap. Users whose last
+        //     message predates the window simply fall back to created_at order
+        //     (they're old conversations, which are lower priority).
+        const RECENT_WINDOW_DAYS = 90;
+        const recentCutoff = new Date(
+            Date.now() - RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000
+        ).toISOString();
         let messagesData = [];
         try {
             const ID_CHUNK_SIZE = 200;
@@ -98,6 +118,7 @@ export async function getFilteredUsers() {
                         .from('messages')
                         .select('end_user_id, time')
                         .in('end_user_id', idChunk)
+                        .gte('time', recentCutoff)
                         .order('end_user_id')
                         .order('time', { ascending: false })
                         .range(from, to)

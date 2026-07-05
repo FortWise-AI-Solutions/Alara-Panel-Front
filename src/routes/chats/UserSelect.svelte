@@ -107,11 +107,13 @@
         if (refreshInterval) {
             clearInterval(refreshInterval);
         }
-        // Интервал в 2 секунды для балансу між актуальністю та навантаженням
+        // Refresh every 6s. The old 2s interval reloaded the entire user list
+        // AND scanned recent message history each tick; refreshes overlapped
+        // and timed out, which is why fresh leads sometimes failed to appear.
         refreshInterval = setInterval(() => {
             console.log("Auto-refreshing users...");
             loadUsers();
-        }, 2000);
+        }, 6000);
     }
 
     function stopRefreshInterval() {
